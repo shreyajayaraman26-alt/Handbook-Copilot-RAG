@@ -664,18 +664,11 @@ if prompt:
 
     if st.session_state.conversation_id is None:
 
-        conversation = create_conversation(
-            title=prompt[:60]
-        )
+      conversation_id = create_conversation(
+        title=prompt[:60]
+    )
 
-
-        st.session_state.conversation_id = (
-            get_value(
-                conversation,
-                "id"
-            )
-        )
-
+    st.session_state.conversation_id = conversation_id
 
     conversation_id = (
         st.session_state.conversation_id
