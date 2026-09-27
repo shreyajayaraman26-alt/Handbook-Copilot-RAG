@@ -13,7 +13,7 @@ __pycache__/
 *.db
 
 # Chroma local database
-chroma_db/
+#chroma_db/
 
 # VS Code settings
 .vscode/
