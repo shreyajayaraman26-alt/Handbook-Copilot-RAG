@@ -18,10 +18,17 @@ from datetime import datetime
 # DATABASE CONNECTION
 # ============================================================
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///chat_history.db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and "DATABASE_URL" in st.secrets:
+            DATABASE_URL = st.secrets["DATABASE_URL"]
+    except Exception:
+        pass
+if not DATABASE_URL:
+    DATABASE_URL = "sqlite:///chat_history.db"
+
 
 
 # PostgreSQL URLs sometimes start with postgres://.
@@ -330,13 +337,24 @@ def save_assistant_message(
         db.flush()
 
         for source in sources:
+            page_val = str(source.get("page", source.get("page_number", "0")))
+            passage_val = source.get("passage", source.get("content", source.get("text", "")))
+            try:
+                default_pdf_page = str(int(page_val) + 1)
+            except Exception:
+                default_pdf_page = "1"
+            pdf_page_val = str(source.get("pdf_page", default_pdf_page))
+            pdf_url_val = source.get(
+                "pdf_url",
+                f"https://hls.harvard.edu/wp-content/uploads/academics-file/HAP.pdf#page={pdf_page_val}"
+            )
 
             db_source = Source(
                 message_id=message.id,
-                page=str(source["page"]),
-                passage=source["passage"],
-                pdf_page=str(source["pdf_page"]),
-                pdf_url=source["pdf_url"]
+                page=page_val,
+                passage=passage_val,
+                pdf_page=pdf_page_val,
+                pdf_url=pdf_url_val
             )
 
             db.add(db_source)

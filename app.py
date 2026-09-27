@@ -37,8 +37,11 @@ load_dotenv()
 
 groq_api_key = os.getenv("GROQ_API_KEY")
 
+if not groq_api_key and hasattr(st, "secrets") and "GROQ_API_KEY" in st.secrets:
+    groq_api_key = st.secrets["GROQ_API_KEY"]
+
 if not groq_api_key:
-    st.error("GROQ_API_KEY was not found in your .env file.")
+    st.error("GROQ_API_KEY was not found in your .env file or Streamlit secrets.")
     st.stop()
 
 client = Groq(api_key=groq_api_key)
@@ -78,8 +81,31 @@ def load_vectorstore():
         model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
+    persist_dir = "chroma_db"
+
+    # Automatically build database from PDF if running on a fresh deployment
+    if not os.path.exists(persist_dir) or not os.listdir(persist_dir):
+        pdf_path = os.path.join("data", "harvard hb.pdf")
+        if os.path.exists(pdf_path):
+            from langchain_community.document_loaders import PyPDFLoader
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+            loader = PyPDFLoader(pdf_path)
+            documents = loader.load()
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200
+            )
+            chunks = text_splitter.split_documents(documents)
+            vectorstore = Chroma.from_documents(
+                documents=chunks,
+                embedding=embeddings,
+                persist_directory=persist_dir
+            )
+            return vectorstore
+
     vectorstore = Chroma(
-        persist_directory="chroma_db",
+        persist_directory=persist_dir,
         embedding_function=embeddings
     )
 
@@ -539,11 +565,15 @@ if st.session_state.conversation_id is not None:
 
                             passage = get_value(
                                 source,
-                                "content",
+                                "passage",
                                 get_value(
                                     source,
-                                    "text",
-                                    ""
+                                    "content",
+                                    get_value(
+                                        source,
+                                        "text",
+                                        ""
+                                    )
                                 )
                             )
 
@@ -557,6 +587,12 @@ if st.session_state.conversation_id is not None:
                             except:
 
                                 pdf_page = 1
+
+                            pdf_url = get_value(
+                                source,
+                                "pdf_url",
+                                f"{HARVARD_PDF_URL}#page={pdf_page}"
+                            )
 
 
                             with st.container(
@@ -577,7 +613,7 @@ if st.session_state.conversation_id is not None:
 
                                 st.link_button(
                                     f"↗ Open Official Harvard PDF at Page {pdf_page}",
-                                    f"{HARVARD_PDF_URL}#page={pdf_page}"
+                                    pdf_url
                                 )
 
 
@@ -664,11 +700,19 @@ if prompt:
 
     if st.session_state.conversation_id is None:
 
-      conversation_id = create_conversation(
-        title=prompt[:60]
-    )
+        conv_result = create_conversation(
+            title=prompt[:60]
+        )
 
-    st.session_state.conversation_id = conversation_id
+        if isinstance(conv_result, int):
+            st.session_state.conversation_id = conv_result
+        elif isinstance(conv_result, dict):
+            st.session_state.conversation_id = conv_result.get("id")
+        elif hasattr(conv_result, "id"):
+            st.session_state.conversation_id = conv_result.id
+        else:
+            st.session_state.conversation_id = conv_result
+
 
     conversation_id = (
         st.session_state.conversation_id
@@ -805,11 +849,23 @@ QUESTION:
             0
         )
 
+        try:
+            pdf_page = (
+                int(page_number) + 1
+            )
+        except Exception:
+            pdf_page = 1
+
+        pdf_url = f"{HARVARD_PDF_URL}#page={pdf_page}"
+
 
         sources.append(
             {
                 "page": page_number,
-                "content": document.page_content
+                "passage": document.page_content,
+                "content": document.page_content,
+                "pdf_page": pdf_page,
+                "pdf_url": pdf_url
             }
         )
 
@@ -843,9 +899,9 @@ QUESTION:
 
             for source in sources:
 
-                page_number = source["page"]
+                page_number = get_value(source, "page", 0)
 
-                passage = source["content"]
+                passage = get_value(source, "passage", get_value(source, "content", ""))
 
 
                 try:
@@ -873,9 +929,15 @@ QUESTION:
                     )
 
 
+                    pdf_url = get_value(
+                        source,
+                        "pdf_url",
+                        f"{HARVARD_PDF_URL}#page={pdf_page}"
+                    )
+
                     st.link_button(
                         f"↗ Open Official Harvard PDF at Page {pdf_page}",
-                        f"{HARVARD_PDF_URL}#page={pdf_page}"
+                        pdf_url
                     )
 
 
